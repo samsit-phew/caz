@@ -3,33 +3,46 @@ const std = @import("std");
 pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
 
-    if (args.len != 3) {
-        std.debug.print("usage: caz examplefile1.txt <sizeoffile>\n", .{});
+    if (args.len != 2) {
+        std.debug.print("usage: caz examplefile1.txt\n", .{});
         std.log.err("invalid number of args", .{});
         return;
     }
     const filePath = args[1];
-    var assumedSize = try std.fmt.parseInt(u16, args[2], 10);
-
-    if (assumedSize > 15360) {
-        assumedSize = 15360;
-        std.log.info("memory is expensive dwag it ramappoclypse lowering the mem use to 15360bytes", .{});
-    }
 
     const cwd = std.Io.Dir.cwd();
 
-    const memBuff = try init.gpa.alloc(u8, assumedSize);
-    defer init.gpa.free(memBuff);
-
-    const contents = cwd.readFile(
-        init.io,
-        filePath,
-        memBuff,
-    ) catch |err| {
-        std.log.err("{}", .{err});
-        return;
+    cwd.access(init.io, filePath, .{}) catch |e| switch (e) {
+        error.FileNotFound => {
+            std.log.err("file '{s}' not found", .{filePath});
+            return;
+        },
+        else => {
+            std.log.err("{}", .{e});
+            return;
+        },
     };
 
-    std.log.info("reading of file sucessful ", .{});
-    std.debug.print("{s}", .{contents});
+    const file = try cwd.openFile(init.io, filePath, .{});
+    defer file.close(init.io);
+
+    var memBuff: [2048]u8 = undefined;
+
+    var reader = file.reader(init.io, &memBuff);
+    var lines: usize = 0;
+    std.debug.print("|{s}                                                                                           |\n", .{filePath});
+    while (try reader.interface.takeDelimiter('\n')) |line| {
+        lines += 1;
+        if (lines < 10) {
+            std.debug.print("| {d}   |---|  {s}\n", .{ lines, line });
+        } else if (lines >= 10 and lines < 100) {
+            std.debug.print("| {d}  |---|  {s}\n", .{ lines, line });
+        } else if (lines >= 100 and lines < 1000) {
+            std.debug.print("| {d} |---|  {s}\n", .{ lines, line });
+        } else {
+            std.debug.print("| {d}|---|  {s}\n", .{ lines, line });
+        }
+    }
+    std.debug.print("\n", .{});
+    std.log.info(" lines read : {d}\n", .{lines});
 }
